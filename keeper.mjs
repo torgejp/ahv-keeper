@@ -23,12 +23,12 @@ const CFG = {
 const USDC = '0xb88339cb7199b77e23db6e890353e22632ba630f';
 const ERR = { '0x12626b5b': 'WithinBand', '0x445636e6': 'Settling', '0x92f952a5': 'NeedSettle', '0x94e8dec3': 'PriceDeviation',  '0x599e2c44': 'WithinThreshold', '0x8d8543e8': 'BelowMinNotional', '0x19954086': 'SizeBelowLot', '0x4dfba023': 'ZeroPrice', '0x4795c6b4': 'ReadFailed', '0x3204506f': 'CallFailed', '0xab143c06': 'Reentrancy' };
 // しきい値
-const T = { liqWarn: 0.25, liqUrgent: 0.15, levWarn: 5, feeUnsentUsd: 5, gapRatio: 0.2, minNotionalForGap: 12, keeperGasMin: 0.01 };
+const T = { liqWarn: 0.12, liqUrgent: 0.07, levWarn: 5, feeUnsentUsd: 5, gapRatio: 0.2, minNotionalForGap: 12, keeperGasMin: 0.01 };
 
 const pad = (x) => x.toLowerCase().replace('0x', '').padStart(64, '0');
 async function post(url, body) {
   const r = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
-  if (!r.ok) throw new Error(`${url} -> HTTP ${r.status}`);
+  if (!r.ok) { let b = ''; try { b = (await r.text()).slice(0, 200); } catch {} throw new Error(`${url} -> HTTP ${r.status} ${b}`); }
   return r.json();
 }
 export async function rpc(method, params) {
@@ -70,11 +70,12 @@ export const sent = [];
 export async function alert(key, cooldownH, priority, title, message, tags = 'warning') {
   const now = Date.now();
   if (state[key] && now - state[key] < cooldownH * 3600e3) { console.log(`(間引き) ${key}: ${title}`); return; }
-  state[key] = now;
   console.log(`🔔 [${priority}] ${title} — ${message}`);
   sent.push({ key, priority, title, message });
-  if (!CFG.topic) return;
-  try { await post(CFG.ntfy, { topic: CFG.topic, title, message, priority, tags: [tags] }); } catch (e) { console.log('ntfy送信失敗', e.message); }
+  if (!CFG.topic) { state[key] = now; return; }
+  const PRI = { min: 1, low: 2, default: 3, high: 4, urgent: 5 }; // ntfy の JSON 送信は優先度を数字(1〜5)で指定する
+  try { await post(CFG.ntfy, { topic: CFG.topic, title, message, priority: PRI[priority] || 3, tags: [tags] }); state[key] = now; } // 送信できたときだけ「通知済み」にする
+  catch (e) { console.log('ntfy送信失敗', e.message); }
 }
 const clear = (key) => { delete state[key]; };
 

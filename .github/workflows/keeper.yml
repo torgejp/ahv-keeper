@@ -17,8 +17,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .keeper-state.json
-          key: keeper-state-${{ github.run_id }}
-          restore-keys: keeper-state-
+          key: keeper-state-v2-${{ github.run_id }}
+          restore-keys: keeper-state-v2-
       - run: node keeper.mjs
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
@@ -29,4 +29,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .keeper-state.json
-          key: keeper-state-${{ github.run_id }}
+          key: keeper-state-v2-${{ github.run_id }}
