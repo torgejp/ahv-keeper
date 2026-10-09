@@ -1,0 +1,32 @@
+name: AutoHedge keeper
+on:
+  schedule:
+    - cron: '*/10 * * * *'   # 10分おき(GitHubの都合で数分遅れることがあります)
+  workflow_dispatch: {}
+concurrency: { group: keeper, cancel-in-progress: false }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --no-audit --no-fund
+      - name: 通知の状態を復元
+        uses: actions/cache/restore@v4
+        with:
+          path: .keeper-state.json
+          key: keeper-state-${{ github.run_id }}
+          restore-keys: keeper-state-
+      - run: node keeper.mjs
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          KEEPER_PK: ${{ secrets.KEEPER_PK }}
+          VAULT: '0x5df092aadd99517b10e1a2ec898ae16c0dfb44f9'
+      - name: 通知の状態を保存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .keeper-state.json
+          key: keeper-state-${{ github.run_id }}
