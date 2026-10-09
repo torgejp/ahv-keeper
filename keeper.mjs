@@ -100,6 +100,7 @@ export async function main() {
   catch (e) { await alert('read_fail', 3, 'high', 'AutoHedge: データを取得できません', String(e.message || e), 'rotating_light'); saveState(); return 1; }
   clear('read_fail');
   console.log('vault', v, '\ncore', c);
+  if (v.supply > 0) try { fs.writeFileSync(process.env.SNAPSHOT_FILE || 'snapshot.json', JSON.stringify({ t: Math.floor(Date.now() / 1000), px: v.nav / v.supply, price: v.price, nav: v.nav, supply: v.supply, hedge: v.hedge })); } catch (e) { console.log('snapshot保存失敗', e.message); }
 
   const notionalLp = v.lpBase * v.price;
   const needHedge = Math.abs(v.target) * v.price >= 10;

@@ -3,6 +3,7 @@ on:
   schedule:
     - cron: '*/10 * * * *'   # 10分おき(GitHubの都合で数分遅れることがあります)
   workflow_dispatch: {}
+permissions: { contents: write }
 concurrency: { group: keeper, cancel-in-progress: false }
 jobs:
   run:
@@ -30,3 +31,20 @@ jobs:
         with:
           path: .keeper-state.json
           key: keeper-state-v2-${{ github.run_id }}
+      - name: 履歴を data ブランチに記録
+        if: always()
+        env:
+          REPO_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          [ -f snapshot.json ] || exit 0
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git clone --depth 1 --branch data "$REPO_URL" hist
+          else
+            git init -q hist && git -C hist checkout -q -b data && git -C hist remote add origin "$REPO_URL"
+          fi
+          node record.mjs hist/history.json snapshot.json
+          cd hist
+          git add history.json
+          git diff --cached --quiet && exit 0
+          git -c user.name=ahv-keeper -c user.email=keeper@users.noreply.github.com commit -q -m "history"
+          git push -q origin data
