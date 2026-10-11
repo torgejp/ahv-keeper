@@ -103,6 +103,12 @@ export async function main() {
   try { v = await readVault(); c = await readCore(); }
   catch (e) { await alert('read_fail', 3, 'high', 'AutoHedge: データを取得できません', String(e.message || e), 'rotating_light'); saveState(); return 1; }
   clear('read_fail');
+  // 鍵の「形」だけを表示(値は出さない)。invalid private key の原因切り分け用
+  if (CFG.pk) {
+    const raw = String(process.env.KEEPER_PK || '');
+    const hex = CFG.pk.replace(/^0x/, '');
+    console.log(`KEEPER_PK の形: 元の長さ=${raw.length} / 補正後の長さ=${CFG.pk.length}(正しくは 66) / 0xで始まる=${CFG.pk.startsWith('0x')} / 16進のみ=${/^[0-9a-fA-F]*$/.test(hex)} / 空白を含む=${/\s/.test(raw)} / 単語数=${raw.trim().split(/\s+/).length}`);
+  } else console.log('KEEPER_PK は未設定(空)');
   console.log('vault', v, '\ncore', c);
   if (v.supply > 0) try { fs.writeFileSync(process.env.SNAPSHOT_FILE || 'snapshot.json', JSON.stringify({ t: Math.floor(Date.now() / 1000), px: v.nav / v.supply, price: v.price, nav: v.nav, supply: v.supply, hedge: v.hedge })); } catch (e) { console.log('snapshot保存失敗', e.message); }
 
