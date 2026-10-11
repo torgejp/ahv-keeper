@@ -1,0 +1,53 @@
+name: AutoHedge keeper (v8)
+on:
+  schedule:
+    - cron: '5-59/10 * * * *'   # 10分おき(GitHubの都合で数分遅れることがあります)
+  workflow_dispatch: {}
+permissions: { contents: write }
+concurrency: { group: keeper-v8, cancel-in-progress: false }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --no-audit --no-fund
+      - name: 通知の状態を復元
+        uses: actions/cache/restore@v4
+        with:
+          path: .keeper-state-v8.json
+          key: keeper-state-v8-${{ github.run_id }}
+          restore-keys: keeper-state-v8-
+      - run: node keeper.mjs
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          KEEPER_PK: ${{ secrets.KEEPER_PK }}
+          VAULT: '0x70db7458325facec57c15cc9007714681fdef151'
+          LABEL: 'v8'
+          STATE_FILE: .keeper-state-v8.json
+          SNAPSHOT_FILE: snapshot-v8.json
+      - name: 通知の状態を保存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .keeper-state-v8.json
+          key: keeper-state-v8-${{ github.run_id }}
+      - name: 履歴を data ブランチに記録
+        if: always()
+        env:
+          REPO_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          [ -f snapshot-v8.json ] || exit 0
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git clone --depth 1 --branch data "$REPO_URL" hist
+          else
+            git init -q hist && git -C hist checkout -q -b data && git -C hist remote add origin "$REPO_URL"
+          fi
+          V=0x70db7458325facec57c15cc9007714681fdef151; node record.mjs "hist/history-${V:2:8}.json" snapshot-v8.json
+          cd hist
+          git add history-*.json
+          git diff --cached --quiet && exit 0
+          git -c user.name=ahv-keeper -c user.email=keeper@users.noreply.github.com commit -q -m "history"
+          for i in 1 2 3; do git push -q origin data && break; git pull -q --rebase origin data; done

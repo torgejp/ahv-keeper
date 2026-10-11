@@ -47,4 +47,4 @@ jobs:
           git add history.json
           git diff --cached --quiet && exit 0
           git -c user.name=ahv-keeper -c user.email=keeper@users.noreply.github.com commit -q -m "history"
-          git push -q origin data
+          for i in 1 2 3; do git push -q origin data && break; git pull -q --rebase origin data; done
