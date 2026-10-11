@@ -19,6 +19,7 @@ const CFG = {
   pk: process.env.KEEPER_PK || '',
   dry: process.env.DRY_RUN === '1',
   stateFile: process.env.STATE_FILE || '.keeper-state.json',
+  label: process.env.LABEL || '',   // 複数の vault を動かすときの見分け用(通知の題名の先頭に付く)
 };
 const USDC = '0xb88339cb7199b77e23db6e890353e22632ba630f';
 const ERR = { '0x12626b5b': 'WithinBand', '0x445636e6': 'Settling', '0x92f952a5': 'NeedSettle', '0x94e8dec3': 'PriceDeviation',  '0x599e2c44': 'WithinThreshold', '0x8d8543e8': 'BelowMinNotional', '0x19954086': 'SizeBelowLot', '0x4dfba023': 'ZeroPrice', '0x4795c6b4': 'ReadFailed', '0x3204506f': 'CallFailed', '0xab143c06': 'Reentrancy' };
@@ -74,7 +75,7 @@ export async function alert(key, cooldownH, priority, title, message, tags = 'wa
   sent.push({ key, priority, title, message });
   if (!CFG.topic) { state[key] = now; return; }
   const PRI = { min: 1, low: 2, default: 3, high: 4, urgent: 5 }; // ntfy の JSON 送信は優先度を数字(1〜5)で指定する
-  try { await post(CFG.ntfy, { topic: CFG.topic, title, message, priority: PRI[priority] || 3, tags: [tags] }); state[key] = now; } // 送信できたときだけ「通知済み」にする
+  try { await post(CFG.ntfy, { topic: CFG.topic, title: (CFG.label ? '[' + CFG.label + '] ' : '') + title, message, priority: PRI[priority] || 3, tags: [tags] }); state[key] = now; } // 送信できたときだけ「通知済み」にする
   catch (e) { console.log('ntfy送信失敗', e.message); }
 }
 const clear = (key) => { delete state[key]; };
