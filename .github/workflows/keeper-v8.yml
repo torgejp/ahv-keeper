@@ -24,7 +24,7 @@ jobs:
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
           KEEPER_PK: ${{ secrets.KEEPER_PK }}
-          VAULT: '0x70db7458325facec57c15cc9007714681fdef151'
+          VAULT: '0xここにv8のvaultアドレス'
           LABEL: 'v8'
           STATE_FILE: .keeper-state-v8.json
           SNAPSHOT_FILE: snapshot-v8.json
@@ -45,7 +45,7 @@ jobs:
           else
             git init -q hist && git -C hist checkout -q -b data && git -C hist remote add origin "$REPO_URL"
           fi
-          V=0x70db7458325facec57c15cc9007714681fdef151; node record.mjs "hist/history-${V:2:8}.json" snapshot-v8.json
+          V=0xここにv8のvaultアドレス; node record.mjs "hist/history-${V:2:8}.json" snapshot-v8.json
           cd hist
           git add history-*.json
           git diff --cached --quiet && exit 0

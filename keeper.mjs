@@ -10,13 +10,15 @@
 import fs from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
+// 秘密鍵の前後の空白・引用符・改行を除き、0x が無ければ補う(GitHub の Secret に貼るとき混ざりやすい)
+function normPk(v) { let x = String(v || '').trim().replace(/^["']|["']$/g, '').trim(); if (/^[0-9a-fA-F]{64}$/.test(x)) x = '0x' + x; return x; }
 const CFG = {
   vault: process.env.VAULT || '',
   rpc: process.env.RPC_URL || 'https://rpc.hyperliquid.xyz/evm',
   info: process.env.INFO_URL || 'https://api.hyperliquid.xyz/info',
   ntfy: process.env.NTFY_URL || 'https://ntfy.sh',
   topic: process.env.NTFY_TOPIC || '',
-  pk: process.env.KEEPER_PK || '',
+  pk: normPk(process.env.KEEPER_PK),
   dry: process.env.DRY_RUN === '1',
   stateFile: process.env.STATE_FILE || '.keeper-state.json',
   label: process.env.LABEL || '',   // 複数の vault を動かすときの見分け用(通知の題名の先頭に付く)
