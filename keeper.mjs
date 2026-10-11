@@ -98,6 +98,7 @@ async function keeperBalance() {
 
 export async function main() {
   loadState();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(CFG.vault)) { await alert('bad_vault', 3, 'high', 'AutoHedge: VAULT の設定が不正です', `VAULT="${CFG.vault}" はアドレス(0x+40桁)ではありません。ワークフローの VAULT を確認してください。`, 'rotating_light'); saveState(); return 1; }
   let v, c;
   try { v = await readVault(); c = await readCore(); }
   catch (e) { await alert('read_fail', 3, 'high', 'AutoHedge: データを取得できません', String(e.message || e), 'rotating_light'); saveState(); return 1; }
