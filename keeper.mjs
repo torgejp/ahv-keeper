@@ -34,10 +34,23 @@ async function post(url, body) {
   if (!r.ok) { let b = ''; try { b = (await r.text()).slice(0, 200); } catch {} throw new Error(`${url} -> HTTP ${r.status} ${b}`); }
   return r.json();
 }
+// RPCノード側の一時的な不調(例: invalid block height)かどうか
+export const isTransient = (e) => /invalid block height|coalesce|timeout|timed out|rate limit|too many|temporar|HTTP 5\d\d|ECONNRESET|fetch failed|-32603|-32005/i.test(String((e && e.message) || e));
 export async function rpc(method, params) {
-  const j = await post(CFG.rpc, { jsonrpc: '2.0', id: 1, method, params });
-  if (j.error) { const e = new Error(j.error.message || 'rpc error'); e.data = j.error.data; throw e; }
-  return j.result;
+  let last;
+  for (let i = 0; i < 4; i++) {
+    try {
+      const j = await post(CFG.rpc, { jsonrpc: '2.0', id: 1, method, params });
+      if (j.error) { const e = new Error(j.error.message || 'rpc error'); e.data = j.error.data; throw e; }
+      return j.result;
+    } catch (e) {
+      last = e;
+      // コントラクトのrevert(dataあり)は再試行しない。ノードの一時的な不調だけ待って再試行する
+      if (e.data || !isTransient(e) || i === 3) throw e;
+      await new Promise((r) => setTimeout(r, 1500 * (i + 1)));
+    }
+  }
+  throw last;
 }
 const ethCall = (to, data, from) => rpc('eth_call', [{ to, data, ...(from ? { from } : {}) }, 'latest']);
 const u = async (to, data) => BigInt(await ethCall(to, data));
@@ -137,7 +150,7 @@ export async function main() {
 
   // 1b) settle: ヘッジ口座の証拠金を目標帯(名目の22〜38%)に保つ。足りないとき/余るときに実行される(帯の中なら WithinBand)
   try {
-    await ethCall(CFG.vault, '0x11da60b4', CFG.pk ? undefined : '0x000000000000000000000000000000000000dEaD');
+    await ethCall(CFG.vault, '0x11da60b4', CFG.pk ? undefined : '0x000000000000000000000000000000000000dEaD'); state.settle_rpc_err = 0;
     if (!CFG.pk) await alert('settle_needed', 1, 'high', 'AutoHedge: settle(証拠金の調整)が必要です', '鍵未設定のため送信しません。手動で settle() を実行してください。', 'warning');
     else if (CFG.dry) console.log('DRY_RUN: settleを送信するところ');
     else {
@@ -147,7 +160,12 @@ export async function main() {
     }
   } catch (e) {
     const sel = String(e.data || '').slice(0, 10), name = ERR[sel] || (sel || String(e.message || e).slice(0, 80));
-    if (name === 'WithinBand' || name === 'Settling') { clear('settle_fail'); clear('settle_needed'); console.log('settle不要: ' + name); }
+    if (name === 'WithinBand' || name === 'Settling') { state.settle_rpc_err = 0; clear('settle_fail'); clear('settle_needed'); console.log('settle不要: ' + name); }
+    else if (!e.data && isTransient(e)) {
+      // ノードの一時的な不調。1回だけでは通知せず、3回連続(約30分)続いたときだけ通知する
+      state.settle_rpc_err = (state.settle_rpc_err || 0) + 1; console.log(`settle確認: RPCの一時エラー(${state.settle_rpc_err}回連続): ${name}`);
+      if (state.settle_rpc_err >= 3) await alert('settle_rpc', 3, 'default', 'AutoHedge: settleの確認がRPCエラーで3回続けて失敗', name, 'warning');
+    }
     else await alert('settle_fail', 1, 'high', 'AutoHedge: settleできません', `${name}(証拠金が不足していると清算の恐れ)`, 'rotating_light');
   }
 
