@@ -144,6 +144,7 @@ export async function main() {
     const name = ERR[sel] || (sel ? sel : String(e.message || e).slice(0, 80));
     if (name === 'WithinThreshold') rbNote = '許容範囲内(rebalance不要)';
     else if (name === 'BelowMinNotional' && !needHedge) rbNote = '小額のためヘッジ対象外';
+    else if (name === 'BelowMinNotional' && Math.abs(v.target - v.hedge) * v.price < 10) rbNote = `差が小さく最小注文額(約$10)未満のため調整待ち(差 約$${(Math.abs(v.target - v.hedge) * v.price).toFixed(1)})`;
     else { rbNote = 'rebalance不可: ' + name; await alert('rb_fail', 1, 'high', 'AutoHedge: rebalanceできません', `${name} / 現在 ${v.hedge} 目標 ${v.target} HYPE`, 'rotating_light'); }
   }
   console.log(rbNote);
