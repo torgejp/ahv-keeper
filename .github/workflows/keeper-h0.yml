@@ -1,0 +1,53 @@
+name: AutoHedge keeper (0%)
+on:
+  schedule:
+    - cron: '8-59/10 * * * *'   # 10分おき(GitHubの都合で数分遅れることがあります)
+  workflow_dispatch: {}
+permissions: { contents: write }
+concurrency: { group: keeper-h0, cancel-in-progress: false }
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm install --no-audit --no-fund
+      - name: 通知の状態を復元
+        uses: actions/cache/restore@v4
+        with:
+          path: .keeper-state-h0.json
+          key: keeper-state-v8-${{ github.run_id }}
+          restore-keys: keeper-state-v8-
+      - run: node keeper.mjs
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          # 0%版は rebalance/settle が不要(失敗=正常)なので、鍵を渡さず読み取り専用で動かす(履歴と生存確認のため)
+          VAULT: '0xbf5fb873f577b24c3fd54baaa48620e4014ef0d6'
+          LABEL: 'h0'
+          STATE_FILE: .keeper-state-h0.json
+          SNAPSHOT_FILE: snapshot-h0.json
+      - name: 通知の状態を保存
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .keeper-state-h0.json
+          key: keeper-state-v8-${{ github.run_id }}
+      - name: 履歴を data ブランチに記録
+        if: always()
+        env:
+          REPO_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+        run: |
+          [ -f snapshot-h0.json ] || exit 0
+          if git ls-remote --exit-code --heads origin data >/dev/null 2>&1; then
+            git clone --depth 1 --branch data "$REPO_URL" hist
+          else
+            git init -q hist && git -C hist checkout -q -b data && git -C hist remote add origin "$REPO_URL"
+          fi
+          V=0xbf5fb873f577b24c3fd54baaa48620e4014ef0d6; node record.mjs "hist/history-${V:2:8}.json" snapshot-h0.json
+          cd hist
+          git add history-*.json
+          git diff --cached --quiet && exit 0
+          git -c user.name=ahv-keeper -c user.email=keeper@users.noreply.github.com commit -q -m "history"
+          for i in 1 2 3; do git push -q origin data && break; git pull -q --rebase origin data; done
