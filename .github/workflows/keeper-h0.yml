@@ -23,7 +23,8 @@ jobs:
       - run: node keeper.mjs
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          # 0%版は rebalance/settle が不要(失敗=正常)なので、鍵を渡さず読み取り専用で動かす(履歴と生存確認のため)
+          # 0%版は rebalance/settle が不要(失敗=正常)。鍵は harvest(手数料の回収)の送信にだけ使われる
+          KEEPER_PK: ${{ secrets.KEEPER_PK }}
           VAULT: '0xbf5fb873f577b24c3fd54baaa48620e4014ef0d6'
           LABEL: 'h0'
           STATE_FILE: .keeper-state-h0.json

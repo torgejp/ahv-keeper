@@ -170,6 +170,23 @@ export async function main() {
     else await alert('settle_fail', 1, 'high', 'AutoHedge: settleできません', `${name}(証拠金が不足していると清算の恐れ)`, 'rotating_light');
   }
 
+  // 1c) harvest: LP手数料を回収し、20%を運営/紹介報酬へ、80%をLPに積み増す(誰でも呼べる。1日1回)。
+  //     回収するまで手数料はNAVに入らないため、定期的に回してシェア価格・APR・運営報酬を実態に合わせる。
+  if (CFG.pk && !CFG.dry && v.supply > 0) {
+    const everyMs = (Number(process.env.HARVEST_HOURS) || 24) * 3600e3;
+    if (!state.last_harvest || Date.now() - state.last_harvest >= everyMs) {
+      try {
+        const r = await sendTxTo('0x4641257d', 1_500_000);
+        console.log(`harvest送信 ${r.hash} status=${r.status}`);
+        if (String(r.status) === '1') { state.last_harvest = Date.now(); state.harvest_err = 0; }
+        else { state.harvest_err = (state.harvest_err || 0) + 1; if (state.harvest_err >= 3) await alert('harvest_fail', 6, 'default', 'AutoHedge: harvestが3回続けて失敗', r.hash, 'warning'); }
+      } catch (e) {
+        state.harvest_err = (state.harvest_err || 0) + 1; console.log('harvest失敗: ' + String((e && e.message) || e).slice(0, 120));
+        if (state.harvest_err >= 3) await alert('harvest_fail', 6, 'default', 'AutoHedge: harvestが3回続けて失敗', String((e && e.message) || e).slice(0, 200), 'warning');
+      }
+    } else console.log('harvest: 前回から間隔内のため見送り');
+  }
+
   // 2) 清算までの距離・レバレッジ
   if (c.szi < 0 && c.liqPx) {
     const dist = (c.liqPx - v.price) / v.price;
