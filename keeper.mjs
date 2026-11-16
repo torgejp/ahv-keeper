@@ -26,7 +26,7 @@ const CFG = {
 const USDC = '0xb88339cb7199b77e23db6e890353e22632ba630f';
 const ERR = { '0x12626b5b': 'WithinBand', '0x445636e6': 'Settling', '0x92f952a5': 'NeedSettle', '0x94e8dec3': 'PriceDeviation',  '0x599e2c44': 'WithinThreshold', '0x8d8543e8': 'BelowMinNotional', '0x19954086': 'SizeBelowLot', '0x4dfba023': 'ZeroPrice', '0x4795c6b4': 'ReadFailed', '0x3204506f': 'CallFailed', '0xab143c06': 'Reentrancy' };
 // しきい値
-const T = { liqWarn: 0.12, liqUrgent: 0.07, levWarn: 5, feeUnsentUsd: 5, gapRatio: 0.2, minNotionalForGap: 12, keeperGasMin: 0.01 };
+const T = { liqWarn: 0.12, liqUrgent: 0.07, levWarn: 5, feeUnsentUsd: 5, gapRatio: 0.2, minNotionalForGap: 12, keeperGasMin: 0.05 };
 
 const pad = (x) => x.toLowerCase().replace('0x', '').padStart(64, '0');
 async function post(url, body) {
@@ -69,6 +69,15 @@ export async function readVault() {
   const hUsdc = await u(USDC, '0x70a08231' + pad(H));
   return { hedge: Number(hedge) / 1e8, target: Number(target) / 1e8, price: Number(price) / 1e4, lpBase: Number(lp) / 1e18,
     nav: Number(nav) / 1e18, feeReserve: 0, vaultUsdc: Number(vUsdc) / 1e6, executorUsdc: Number(hUsdc) / 1e6, supply: Number(supply) / 1e18 };
+}
+
+// LP手数料の累積指標(pool の feeGrowthGlobal と vault の LP 流動性)。history に記録して、サイトが「手数料収入」を出すのに使う。失敗しても本処理には影響しない
+export async function readFeeGrowth() {
+  const V = CFG.vault, w = (h, i) => BigInt('0x' + h.slice(2).slice(i * 64, i * 64 + 64));
+  const [pool, npm, id, t0] = await Promise.all([ethCall(V, '0x16f0115b'), ethCall(V, '0x791b98bc'), ethCall(V, '0x0242d712'), ethCall(V, '0x0dfe1681')]);
+  const poolA = '0x' + pool.slice(26), npmA = '0x' + npm.slice(26);
+  const [fg0, fg1, pos] = await Promise.all([u(poolA, '0xf3058399'), u(poolA, '0x46141319'), ethCall(npmA, '0x99fbab88' + id.slice(2).padStart(64, '0'))]);
+  return { fg0: fg0.toString(), fg1: fg1.toString(), liq: w(pos, 7).toString(), t0u: ('0x' + t0.slice(26)).toLowerCase() === USDC ? 1 : 0 };
 }
 export async function readCore() {
   const p = await post(CFG.info, { type: 'clearinghouseState', user: await getHedger() });
@@ -123,7 +132,7 @@ export async function main() {
     console.log(`KEEPER_PK の形: 元の長さ=${raw.length} / 補正後の長さ=${CFG.pk.length}(正しくは 66) / 0xで始まる=${CFG.pk.startsWith('0x')} / 16進のみ=${/^[0-9a-fA-F]*$/.test(hex)} / 空白を含む=${/\s/.test(raw)} / 単語数=${raw.trim().split(/\s+/).length}`);
   } else console.log('KEEPER_PK は未設定(空)');
   console.log('vault', v, '\ncore', c);
-  if (v.supply > 0) try { fs.writeFileSync(process.env.SNAPSHOT_FILE || 'snapshot.json', JSON.stringify({ t: Math.floor(Date.now() / 1000), px: v.nav / v.supply, price: v.price, nav: v.nav, supply: v.supply, hedge: v.hedge })); } catch (e) { console.log('snapshot保存失敗', e.message); }
+  if (v.supply > 0) try { fs.writeFileSync(process.env.SNAPSHOT_FILE || 'snapshot.json', JSON.stringify({ t: Math.floor(Date.now() / 1000), px: v.nav / v.supply, price: v.price, nav: v.nav, supply: v.supply, hedge: v.hedge, fee: await readFeeGrowth().catch((e) => { console.log('手数料指標の取得に失敗', e.message); return null; }) })); } catch (e) { console.log('snapshot保存失敗', e.message); }
 
   const notionalLp = v.lpBase * v.price;
   const needHedge = Math.abs(v.target) * v.price >= 10;
@@ -206,8 +215,9 @@ export async function main() {
     if (gap > T.gapRatio && Math.abs(v.target) * v.price >= T.minNotionalForGap) await alert('gap', 3, 'high', 'AutoHedge: ヘッジが目標からずれています', `現在 ${v.hedge} / 目標 ${v.target} HYPE(${rbNote})`);
     else clear('gap');
   }
-  // 5) keeperのガス
-  if (CFG.pk) { try { const b = await keeperBalance(); if (b < T.keeperGasMin) await alert('gas', 24, 'high', 'AutoHedge: keeperのガス(HYPE)が不足', `残高 ${b.toFixed(4)} HYPE。少額を送ってください。`); } catch {} }
+  // 5) keeperのガス(アドレスは公開情報なのでログに出す。入金先の確認用)
+  if (CFG.pk) { try { console.log('keeper address ' + new ethers.Wallet(CFG.pk).address + ' / gas ' + (await keeperBalance()).toFixed(4) + ' HYPE'); } catch {} }
+  if (CFG.pk) { try { const b = await keeperBalance(); if (b < T.keeperGasMin) await alert('gas', 24, 'high', 'AutoHedge: keeperのガス(HYPE)が不足', `残高 ${b.toFixed(4)} HYPE。このアドレスへ HYPE を 0.2 ほど送ってください(HyperEVM): ${new ethers.Wallet(CFG.pk).address}`); } catch {} }
   // 6) 1日1回の生存通知
   await alert('heartbeat', 24, 'min', 'AutoHedge: 稼働中', `NAV $${v.nav.toFixed(2)} / LP内HYPE ${v.lpBase.toFixed(3)} / ヘッジ ${v.hedge} / 証拠金 $${c.accountValue.toFixed(1)}` + (c.liqPx ? ` / 清算 $${c.liqPx.toFixed(1)}(現在$${v.price.toFixed(1)})` : '') + ` / ${rbNote}`, 'white_check_mark');
   saveState();
